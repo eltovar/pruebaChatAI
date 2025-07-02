@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.env
+.pytest_cache/
+.coverage
+.ipynb_checkpoints
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Data y Modelos Locales
+data/
+!.gitkeep # Permite mantener la carpeta 'data' vacía si la necesitas en el repo
+!data/documentos.txt # Puedes incluir documentos.txt si es pequeño y necesario para el repo
+faiss_index_mi_conocimiento/ # Ignora la carpeta del índice FAISS generado
+*.faiss
+*.pkl
+
+# Logs y Temporales
+*.log
+tmp/
+temp/
+
+# Dependencias (si se instalan localmente fuera de venv, aunque no recomendado)
+site-packages/
+
+# Archivos de configuración sensibles (además de .env)
+*.key
+*.pem
+*.cert
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
