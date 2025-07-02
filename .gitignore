@@ -6,7 +6,6 @@ __pycache__/
 .Python
 env/
 venv/
-*.env
 .env
 .pytest_cache/
 .coverage
