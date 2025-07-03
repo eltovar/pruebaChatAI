@@ -97,17 +97,26 @@ memory = ConversationBufferMemory(memory_key="chat_history", return_messages=Tru
 # --- Inicializar el Agente de LangChain ---
 # Usamos ChatPromptTemplate para una mejor integración con el historial de mensajes
 # y las funciones del agente.
-prompt = PromptTemplate.from_template( # Aquí usas PromptTemplate directamente, pero es mejor ChatPromptTemplate para agentes
+prompt = PromptTemplate.from_template(
     """Actúa como un asistente útil y amigable de Glamping Brillo de Luna.
 Tu objetivo es ayudar a los usuarios con información sobre el glamping, servicios, y responder a sus preguntas de manera conversacional.
 Si el usuario pregunta sobre algo que no sabes, puedes sugerirle que revise las opciones del menú principal.
 
+Herramientas disponibles:
+{tools}
+
+Usar las siguientes herramientas: {tool_names}
+
 Tu historial de conversación:
 {chat_history}
+
 Pregunta actual del usuario: {input}
+
 {agent_scratchpad}
 """
 )
+agent = create_react_agent(agent_llm, tools, prompt) # Ahora 'prompt' tiene todas las variables requeridas
+
 
 # NOTA: Para un agente con memoria y tools, la estructura de prompt más robusta es con ChatPromptTemplate
 # y MessagesPlaceholder. El `create_react_agent` ya espera un prompt específico.
@@ -125,7 +134,6 @@ Pregunta actual del usuario: {input}
 # agent = create_openai_tools_agent(agent_llm, tools, prompt)
 # Usaremos tu PromptTemplate simple por ahora, pero la advertencia de LangChain sugiere una migración.
 
-agent = create_react_agent(agent_llm, tools, prompt) # Usamos el prompt con historial
 
 agent_executor = AgentExecutor(
     agent=agent,
