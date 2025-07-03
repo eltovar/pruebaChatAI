@@ -245,7 +245,7 @@ def webhook():
             set_output_context(response_json, session_id, "glamping_options_menu_active")
             clear_output_context(response_json, session_id, "main_menu_active")
 
-        elif intent_display_name == 'Ask AI Agent' or intent_display_name == 'langchainAgent':
+        elif intent_display_name == 'AskAgent' or intent_display_name == 'langchainAgent':
             # Este intent (o si ya el usuario está en contexto de "preguntar al agente")
             # delega directamente al agente de LangChain
             print(f"Intent para Agente LangChain activado. Pregunta: \"{user_query}\"")
@@ -287,7 +287,7 @@ def webhook():
             set_fulfillment_text(response_json, "Para soporte técnico o cualquier incidencia durante tu estadía, por favor llama al 300-987-6543. ¡Estamos disponibles 24/7 para nuestros huéspedes!")
         
         elif intent_display_name == 'Reservas_Intent': # Puedes tener un intent específico de Dialogflow para esto
-            set_fulfillment_text(response_json, "Puedes realizar tus reservas directamente en nuestro sitio web www.brillodeluna.com/reservas. ¡Es rápido y sencillo!")
+            set_fulfillment_text(response_json, "Puedes realizar tus reservas directamente en nuestro sitio web www.glampingbrillodeluna.com/reservas. ¡Es rápido y sencillo!")
         
         elif intent_display_name == 'Tarifas_Intent': # Un intent específico para tarifas
             set_fulfillment_text(response_json, "Nuestras tarifas varían según la temporada y el tipo de glamping. Visita www.brillodeluna.com/tarifas para ver todos los detalles y ofertas actuales.")
