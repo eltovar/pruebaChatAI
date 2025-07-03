@@ -38,7 +38,7 @@ agent_llm = ChatOpenAI(model="GPT-4o-Mini", temperature=0.7, openai_api_key=open
 # --- Definición de Herramientas (Tools) para el Agente ---
 
 @tool
-def provide_glamping_info(query: str) -> str:
+def AskAgent(query: str) -> str:
     """Proporciona información detallada sobre Glamping Brillo de Luna.
     Usa esta herramienta cuando el usuario pregunte sobre servicios, tipos de glamping,
     comodidades, políticas generales, o cualquier detalle sobre la experiencia del glamping.
@@ -85,7 +85,7 @@ def finalize_sale_process(product_info: str, client_info: str) -> str:
 
 tools = [
     # get_current_weather, # Considera si esta tool es relevante para Glamping Brillo de Luna
-    provide_glamping_info, # Nueva tool para info del glamping
+    AskAgent, # Nueva tool para info del glamping
     finalize_sale_process
 ]
 
@@ -218,7 +218,7 @@ def webhook():
 
             # Si el agente no pudo encontrar algo útil, o si devuelve "NO_INFO_ENCONTRADA_RAG"
             # puedes personalizar la respuesta o dirigir al menú.
-            if "NO_INFO_ENCONTRADA_RAG" in agent_output: # Si tu tool provide_glamping_info regresa esto.
+            if "NO_INFO_ENCONTRADA_RAG" in agent_output: # Si tu tool AskAgent regresa esto.
                  set_fulfillment_text(response_json, f"Lo siento, no tengo información específica sobre '{user_query}'. ¿Hay algo más en lo que pueda ayudarte o te gustaría revisar las opciones del menú?")
             else:
                  set_fulfillment_text(response_json, agent_output)
