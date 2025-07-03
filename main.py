@@ -1,95 +1,46 @@
 import os
 import json
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify # send_from_directory no es necesario si solo es API
 from dotenv import load_dotenv
 import openai
 from datetime import datetime
+import requests # Necesario si aún quieres una ruta de proxy para el agente, pero lo integraremos directamente.
 
-# LangChain imports para RAG
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+# LangChain imports
 from langchain_openai import ChatOpenAI
-from langchain_core.documents import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-# LangChain imports para Agente y Tools
-from langchain.chains import RetrievalQA
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain import hub
 from langchain.tools import tool
-from langchain.memory import ConversationBufferMemory # IMPORTANTE: Para mantener el contexto de la conversación
-from langchain.prompts import MessagesPlaceholder # Para usar en el prompt del agente con memoria
-# Flask-SocketIO para notificaciones en tiempo real
-from flask_socketio import SocketIO, emit
+from langchain.memory import ConversationBufferMemory
+from langchain_core.prompts import PromptTemplate, MessagesPlaceholder # <-- Importaciones clave para el prompt con memoria
 
-from langchain.prompts import PromptTemplate
+
+# Flask-SocketIO (si aún lo necesitas para notificaciones externas, si no, puedes quitarlo)
+from flask_socketio import SocketIO, emit
 
 # --- Cargar variables de entorno al iniciar la aplicación ---
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
+# FLASK_API_URL ya no será necesario como una URL de API externa,
+# sino que las llamadas al agente serán internas.
 
 if not openai_api_key:
-    raise ValueError("La variable de entorno OPENAI_API_KEY no está configurada.")
+    raise ValueError("La variable de entorno OPENAI_API_KEY no está configurada. Asegúrate de tener un archivo .env con OPENAI_API_KEY=tu_clave_aqui")
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Configuración del puerto para Railway
+port = int(os.getenv('PORT', 8080)) # Por defecto 8080 si PORT no está en env
+socketio = SocketIO(app, cors_allowed_origins="*") # Mantener si usas las notificaciones de venta
 
-# --- Configuración e inicialización del sistema RAG ---
-VECTOR_STORE_PATH = "faiss_index_mi_conocimiento"
-DOCUMENT_PATH = "data/documento.txt"
-
-embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-if os.path.exists(VECTOR_STORE_PATH):
-    print(f"Cargando índice FAISS desde: {VECTOR_STORE_PATH}")
-    vectorstore = FAISS.load_local(VECTOR_STORE_PATH, embedding_model, allow_dangerous_deserialization=True)
-else:
-    print(f"Creando nuevo índice FAISS y guardándolo en: {VECTOR_STORE_PATH}")
-    os.makedirs(os.path.dirname(DOCUMENT_PATH), exist_ok=True)
-    try:
-        with open(DOCUMENT_PATH, encoding="utf-8") as f:
-            texto = f.read()
-    except FileNotFoundError:
-        print(f"Error: El archivo de documento '{DOCUMENT_PATH}' no se encontró. Crea un archivo.")
-        texto = "No se encontraron documentos de conocimiento para RAG."
-
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
-        length_function=len,
-        add_start_index=True,
-    )
-    chunks = text_splitter.create_documents([texto])
-
-    vectorstore = FAISS.from_documents(chunks, embedding_model)
-    vectorstore.save_local(VECTOR_STORE_PATH)
-
-rag_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7, openai_api_key=openai_api_key)
-
-qa_chain = RetrievalQA.from_chain_type(
-    llm=rag_llm,
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(search_kwargs={"k": 4})
-)
-
-def responder_con_rag(pregunta: str) -> str:
-    """Función para responder a preguntas usando el sistema RAG."""
-    try:
-        result = qa_chain.invoke({"query": pregunta})
-        return result.get("result", "No se encontró información relevante en los documentos.")
-    except openai.APIError as e:
-        print(f"Error de API de OpenAI en RAG: {e}")
-        return "Lo siento, hubo un problema con el servicio de IA al buscar información."
-    except Exception as e:
-        print(f"Error al ejecutar RAG: {e}")
-        return f"Ocurrió un error inesperado al procesar tu solicitud: {e}"
-
-agent_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7, openai_api_key=openai_api_key)
+# --- Configuración del Agente de LangChain (SIN RAG por ahora) ---
+agent_llm = ChatOpenAI(model="gpt-0mini", temperature=0.7, openai_api_key=openai_api_key)
 
 # --- Definición de Herramientas (Tools) para el Agente ---
 @tool
 def get_current_weather(location: str) -> str:
     """Obtiene el clima actual para una ubicación dada."""
+    # NOTA: Esta tool aún existe, pero si el proyecto es de "Glamping Brillo de Luna"
+    # y no hay necesidad de clima, deberías quitarla o modificarla para que sea relevante.
     if "Medellín" in location or "Itagüí" in location or "Envigado" in location:
         return "El clima actual en el Valle de Aburrá (Medellín/Itagüí) es soleado con una temperatura de 30°C. Ideal para actividades al aire libre."
     elif "Bogotá" in location:
@@ -97,16 +48,36 @@ def get_current_weather(location: str) -> str:
     elif "Cali" in location:
         return "El clima en Cali es parcialmente nublado con 27°C. Se siente cálido y húmedo."
     else:
+        # Aquí puedes personalizar para Glamping Brillo de Luna si es necesario.
         return f"No tengo información del clima para {location} en este momento. Por favor, especifica una ciudad principal de Colombia."
 
 @tool
-def process_knowledge_query(query: str) -> str:
-    """Procesa una consulta que requiere información de la base de conocimiento (RAG).
-    Útil cuando el usuario pregunta sobre detalles específicos de productos, políticas, o temas internos."""
-    rag_response = responder_con_rag(query)
-    if "No se encontró información relevante" in rag_response or "Ocurrió un error inesperado" in rag_response:
-        return "NO_INFO_ENCONTRADA_RAG"
-    return rag_response
+def provide_glamping_info(query: str) -> str:
+    """Proporciona información detallada sobre Glamping Brillo de Luna.
+    Usa esta herramienta cuando el usuario pregunte sobre servicios, tipos de glamping,
+    comodidades, políticas generales, o cualquier detalle sobre la experiencia del glamping.
+    El agente puede usar esta herramienta para generar respuestas basadas en el conocimiento
+    que se le ha dado indirectamente a través del prompt o si se le entrena con datos."""
+    # Como NO estamos usando RAG por ahora, esta tool simplemente
+    # devolverá una respuesta general o indicará que necesita más info.
+    # Si quieres que el agente tenga "conocimiento" aquí sin RAG, tendrías que
+    # codificar las respuestas directamente o usar un prompt muy bueno.
+    # Por ejemplo, podríamos tener un pequeño diccionario de preguntas frecuentes aquí.
+    if "servicios" in query.lower() or "ofrecen" in query.lower():
+        return "Ofrecemos glampings de lujo con tinas de hidromasaje, cenas románticas, y actividades al aire libre como senderismo y observación de estrellas. Cada glamping tiene su propio baño privado y vistas espectaculares."
+    elif "tipos de glamping" in query.lower() or "cuales glampings" in query.lower():
+        return "Contamos con glampings tipo domo geodésico y burbujas transparentes. Cada uno ofrece una experiencia única de inmersión en la naturaleza con todas las comodidades."
+    elif "precios" in query.lower() or "costo" in query.lower() or "tarifas" in query.lower():
+        # Dirigimos al intent de Dialogflow si queremos que Dialogflow maneje la conversación.
+        # O el agente podría decir algo más general y dejar que Dialogflow tome el control.
+        return "Para información sobre precios y tarifas, te recomiendo visitar nuestra sección de 'Tarifas' en el menú principal o nuestro sitio web. Los precios varían según la temporada y el tipo de glamping."
+    elif "reservas" in query.lower() or "reservar" in query.lower():
+        # Igual, dirigir al intent de Dialogflow o dar una respuesta general.
+        return "Puedes hacer una reserva directamente a través de nuestro sitio web en la sección de 'Reservas' o contactarnos directamente para asistencia personalizada."
+    elif "ubicacion" in query.lower() or "lugar" in query.lower():
+        return "Glamping Brillo de Luna está ubicado en un entorno natural privilegiado, a solo 2 horas de Medellín, ofreciendo una escapada perfecta de la ciudad. Te enviaremos la ubicación exacta al momento de tu reserva."
+    else:
+        return "Soy el agente de IA de Glamping Brillo de Luna. ¿Tienes alguna pregunta específica sobre nuestros glampings o servicios?"
 
 @tool
 def finalize_sale_process(product_info: str, client_info: str) -> str:
@@ -127,47 +98,49 @@ def finalize_sale_process(product_info: str, client_info: str) -> str:
     return f"¡Excelente! El proceso de venta de {product_info} para {client_info} ha sido exitoso y se ha generado la notificación."
 
 tools = [
-    get_current_weather,
-    process_knowledge_query,
+    # get_current_weather, # Considera si esta tool es relevante para Glamping Brillo de Luna
+    provide_glamping_info, # Nueva tool para info del glamping
     finalize_sale_process
 ]
 
-# --- Inicializar la memoria de conversación ---
-# IMPORTANTE: En este setup de Flask sin estado persistente para cada usuario,
-# esta memoria se reiniciará con cada nueva solicitud de webhook.
-# Para persistencia real entre llamadas, necesitas guardar/cargar la memoria en una DB (ej., Redis, Firestore).
+# --- Inicializar la memoria de conversación para el Agente LangChain ---
+# Esta memoria se reiniciará con cada nueva solicitud de webhook a menos que
+# la persistas externamente usando el session_id de Dialogflow.
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
 # --- Inicializar el Agente de LangChain ---
-# Cargamos el prompt base de ReAct.
-prompt = hub.pull("hwchase17/react")
+# Usamos ChatPromptTemplate para una mejor integración con el historial de mensajes
+# y las funciones del agente.
+prompt = PromptTemplate.from_template( # Aquí usas PromptTemplate directamente, pero es mejor ChatPromptTemplate para agentes
+    """Actúa como un asistente útil y amigable de Glamping Brillo de Luna.
+Tu objetivo es ayudar a los usuarios con información sobre el glamping, servicios, y responder a sus preguntas de manera conversacional.
+Si el usuario pregunta sobre algo que no sabes, puedes sugerirle que revise las opciones del menú principal.
 
-# Modificamos el prompt para incluir el historial de chat.
-# Usamos `MessagesPlaceholder` para insertar dinámicamente el historial.
-# Asegúrate de que tu `prompt` incluye esta sección.
-# Un prompt base de ReAct no siempre incluye un chat_history. Tendrías que crearlo o modificarlo.
-# Ejemplo de cómo se vería un prompt extendido para manejar memoria:
-# Ver el ejemplo de "agent with memory" en la documentación de LangChain si quieres un prompt más completo.
-
-# Una forma de añadir chat_history al prompt si el hub.pull no lo tiene por defecto:
-# Si el prompt base no incluye ya un placeholder para chat_history, necesitamos crearlo.
-# Un buen ejemplo sería usar `AgentExecutor.from_agent_and_tools` con un prompt personalizado
-# que incluya `chat_history`.
-
-# Para un agente ReAct simple con memoria, el `prompt` debería tener una variable `chat_history`.
-# Si `hub.pull("hwchase17/react")` no la tiene, podemos definirla:
-prompt_with_history = PromptTemplate.from_template(
-    """Actúa como un asistente útil.
 Tu historial de conversación:
 {chat_history}
-Pregunta actual: {input}
-{agent_scratchpad}"""
+Pregunta actual del usuario: {input}
+{agent_scratchpad}
+"""
 )
 
+# NOTA: Para un agente con memoria y tools, la estructura de prompt más robusta es con ChatPromptTemplate
+# y MessagesPlaceholder. El `create_react_agent` ya espera un prompt específico.
+# Si quieres usar un prompt más conversacional y estructurado, es más común hacer algo así:
+# from langchain.agents import AgentExecutor, create_openai_tools_agent
+# from langchain_core.messages import AIMessage, HumanMessage
+# prompt = ChatPromptTemplate.from_messages(
+#     [
+#         ("system", "Actúa como un asistente amigable de Glamping Brillo de Luna."),
+#         MessagesPlaceholder(variable_name="chat_history"), # Esto se llenará con la memoria
+#         ("human", "{input}"),
+#         MessagesPlaceholder(variable_name="agent_scratchpad"), # Esto es para las reflexiones del agente
+#     ]
+# )
+# agent = create_openai_tools_agent(agent_llm, tools, prompt)
+# Usaremos tu PromptTemplate simple por ahora, pero la advertencia de LangChain sugiere una migración.
 
-agent = create_react_agent(agent_llm, tools, prompt_with_history) # Usamos el prompt con historial
-# Añadimos la memoria al AgentExecutor.
-# `memory_key="chat_history"` debe coincidir con el nombre de la variable en el prompt.
+agent = create_react_agent(agent_llm, tools, prompt) # Usamos el prompt con historial
+
 agent_executor = AgentExecutor(
     agent=agent,
     tools=tools,
@@ -176,6 +149,39 @@ agent_executor = AgentExecutor(
     handle_parsing_errors=True
 )
 
+# --- Funciones Auxiliares para la Respuesta de Dialogflow ---
+def build_response_json():
+    return {
+        "fulfillmentText": "",
+        "fulfillmentMessages": [],
+        "outputContexts": []
+    }
+
+def set_fulfillment_text(response, text_content):
+    response["fulfillmentText"] = text_content
+
+def add_quick_replies(response, text, replies):
+    response["fulfillmentMessages"].append({
+        "payload": {
+            "facebook": { # Asumiendo que usas Facebook Messenger, si no, ajusta a "telegram" etc.
+                "text": text,
+                "quick_replies": replies
+            }
+        }
+    })
+
+def set_output_context(response, session, context_name, lifespan_count=5):
+    response["outputContexts"].append({
+        "name": f"{session}/contexts/{context_name}",
+        "lifespanCount": lifespan_count
+    })
+
+def clear_output_context(response, session, context_name):
+    response["outputContexts"].append({
+        "name": f"{session}/contexts/{context_name}",
+        "lifespanCount": 0
+    })
+
 # --- Webhook de Flask para Dialogflow ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -183,54 +189,142 @@ def webhook():
     print(f"Dialogflow Request Body: {json.dumps(req, indent=2)}")
 
     query_result = req.get('queryResult', {})
-    query_text = query_result.get('queryText', '').strip()
+    user_query = query_result.get('queryText', '').strip()
     intent_display_name = query_result.get('intent', {}).get('displayName')
     parameters = query_result.get('parameters', {})
     session_id = req.get('session') # Obtener el ID de sesión de Dialogflow
 
-    fulfillment_text = "Lo siento, no pude procesar tu solicitud."
+    response_json = build_response_json() # Inicializa la respuesta de Dialogflow
 
     try:
-        # --- Lógica para manejar el menú estático de Dialogflow ---
-        if intent_display_name == 'MenuOpcion_Horarios':
-            fulfillment_text = "Nuestro horario de atención es de lunes a viernes de 8:00 AM a 5:00 PM y sábados de 9:00 AM a 1:00 PM."
-        elif intent_display_name == 'MenuOpcion_Contacto':
-            fulfillment_text = "Puedes contactarnos al 018000-123456 o enviarnos un correo a info@ejemplo.com."
-        elif intent_display_name == 'MenuOpcion_Soporte':
-            fulfillment_text = "Para soporte técnico, por favor detalla tu problema. Un agente de IA o humano te asistirá. O puedes visitar nuestra sección de preguntas frecuentes en el sitio web."
-        # --- Lógica para la venta (si Dialogflow ha confirmado todos los parámetros) ---
+        # --- Lógica de Manejo de Intents (prioridad sobre el agente si es explícito) ---
+        if intent_display_name == 'Default Welcome Intent':
+            print("Intent 'Default Welcome Intent' activado.")
+            set_fulfillment_text(response_json, '¡Hola! Soy el asistente de Glamping Brillo de Luna. ¿En qué puedo ayudarte?')
+            add_quick_replies(response_json, "¿Qué te gustaría saber?", [
+                {"content_type": "text", "title": "Opciones Glamping", "payload": "GLAMPING_OPTIONS_PAYLOAD"},
+                {"content_type": "text", "title": "Contactar Asesor", "payload": "CONTACT_ADVISOR_PAYLOAD"} # Ejemplo
+            ])
+            set_output_context(response_json, session_id, "main_menu_active")
+
+        elif intent_display_name == 'Default Fallback Intent':
+            # Si el intent de Fallback se activa, primero intenta con el agente
+            print("Intent 'Default Fallback Intent' activado, intentando con Agente IA.")
+            agent_output = ""
+            try:
+                # La memoria se usa aquí por cada invocación.
+                # Si quieres persistencia entre turnos, necesitarías guardar/cargar
+                # 'memory' usando 'session_id' en una DB externa.
+                # Para un demo o pruebas simples, esta memoria funciona para una sola llamada.
+                response_agent = agent_executor.invoke({"input": user_query})
+                agent_output = response_agent.get("output", "Lo siento, no pude generar una respuesta con el agente.")
+            except Exception as e:
+                print(f"Error al invocar al agente LangChain en Fallback: {e}")
+                agent_output = "Lo siento, el agente de IA no está disponible en este momento. Por favor, intenta de nuevo o selecciona una opción del menú."
+
+            # Si el agente no pudo encontrar algo útil, o si devuelve "NO_INFO_ENCONTRADA_RAG"
+            # puedes personalizar la respuesta o dirigir al menú.
+            if "NO_INFO_ENCONTRADA_RAG" in agent_output: # Si tu tool provide_glamping_info regresa esto.
+                 set_fulfillment_text(response_json, f"Lo siento, no tengo información específica sobre '{user_query}'. ¿Hay algo más en lo que pueda ayudarte o te gustaría revisar las opciones del menú?")
+            else:
+                 set_fulfillment_text(response_json, agent_output)
+
+
+        elif intent_display_name == 'Primer Menu':
+            print("Intent 'Primer Menu' activado.")
+            set_fulfillment_text(response_json, "¡Hola! ¿En qué puedo ayudarte hoy?")
+            add_quick_replies(response_json, "¿Qué te gustaría hacer?", [
+                {"content_type": "text", "title": "Opciones Glamping", "payload": "GLAMPING_OPTIONS_PAYLOAD"},
+                {"content_type": "text", "title": "Más Información", "payload": "MORE_INFO_WEB_PAYLOAD"}
+            ])
+            set_output_context(response_json, session_id, "main_menu_active")
+
+        elif intent_display_name == 'Glamping Options Menu':
+            print("Intent 'Glamping Options Menu' activado.")
+            set_fulfillment_text(response_json, "¿Sobre qué deseas saber de los glampings?")
+            add_quick_replies(response_json, "Selecciona una opción:", [
+                {"content_type": "text", "title": "Preguntar al Agente IA", "payload": "ASK_AI_AGENT_PAYLOAD"},
+                {"content_type": "text", "title": "Reservas", "payload": "RESERVATIONS_PAYLOAD"},
+                {"content_type": "text", "title": "Tarifas", "payload": "RATES_PAYLOAD"},
+                {"content_type": "text", "title": "Ubicación", "payload": "LOCATION_PAYLOAD"}
+            ])
+            set_output_context(response_json, session_id, "glamping_options_menu_active")
+            clear_output_context(response_json, session_id, "main_menu_active")
+
+        elif intent_display_name == 'Ask AI Agent' or intent_display_name == 'langchainAgent':
+            # Este intent (o si ya el usuario está en contexto de "preguntar al agente")
+            # delega directamente al agente de LangChain
+            print(f"Intent para Agente LangChain activado. Pregunta: \"{user_query}\"")
+            
+            agent_output = ""
+            try:
+                response_agent = agent_executor.invoke({"input": user_query})
+                agent_output = response_agent.get("output", "Lo siento, no pude generar una respuesta con el agente.")
+            except Exception as e:
+                print(f"Error al invocar al agente LangChain: {e}")
+                agent_output = "Lo siento, hubo un problema al procesar tu solicitud con el agente de IA. Por favor, intenta de nuevo."
+
+            # Si el agente responde con "NO_INFO_ENCONTRADA_RAG", puedes personalizar la respuesta.
+            if "NO_INFO_ENCONTRADA_RAG" in agent_output:
+                set_fulfillment_text(response_json, f"No tengo esa información específica en este momento. ¿Hay algo más de Glamping Brillo de Luna en lo que pueda ayudarte?")
+            else:
+                set_fulfillment_text(response_json, agent_output)
+            
+            clear_output_context(response_json, session_id, "awaiting_ai_query") # Limpia el contexto si existe
+
         elif intent_display_name == 'Confirmar_Venta_Intent':
+            # Asumiendo que Dialogflow ya capturó los parámetros 'producto' y 'cliente'
             product = parameters.get('producto')
             client = parameters.get('cliente')
             if product and client:
-                fulfillment_text = finalize_sale_process(product, client)
+                fulfillment_text_sale = finalize_sale_process(product, client)
+                set_fulfillment_text(response_json, fulfillment_text_sale)
             else:
-                fulfillment_text = "Necesito más información (producto y cliente) para finalizar la venta."
-        # --- Si no es una opción de menú o venta confirmada, pasar al Agente de LangChain ---
+                set_fulfillment_text(response_json, "Necesito más información (producto y cliente) para finalizar la venta.")
+        
+        # --- Intents estáticos de ejemplo de Glamping Brillo de Luna ---
+        elif intent_display_name == 'MenuOpcion_Horarios': # Renombrado de tu PruebaChatAI para consistencia
+            set_fulfillment_text(response_json, "Nuestro horario de atención es de lunes a viernes de 8:00 AM a 5:00 PM y sábados de 9:00 AM a 1:00 PM. ¡Te esperamos en Glamping Brillo de Luna!")
+        
+        elif intent_display_name == 'MenuOpcion_Contacto':
+            set_fulfillment_text(response_json, "Puedes contactarnos al 300-123-4567 o enviarnos un correo a info@brillodeluna.com. ¡Estamos para servirte!")
+        
+        elif intent_display_name == 'MenuOpcion_Soporte':
+            set_fulfillment_text(response_json, "Para soporte técnico o cualquier incidencia durante tu estadía, por favor llama al 300-987-6543. ¡Estamos disponibles 24/7 para nuestros huéspedes!")
+        
+        elif intent_display_name == 'Reservas_Intent': # Puedes tener un intent específico de Dialogflow para esto
+            set_fulfillment_text(response_json, "Puedes realizar tus reservas directamente en nuestro sitio web www.brillodeluna.com/reservas. ¡Es rápido y sencillo!")
+        
+        elif intent_display_name == 'Tarifas_Intent': # Un intent específico para tarifas
+            set_fulfillment_text(response_json, "Nuestras tarifas varían según la temporada y el tipo de glamping. Visita www.brillodeluna.com/tarifas para ver todos los detalles y ofertas actuales.")
+        
+        elif intent_display_name == 'Ubicacion_Intent': # Un intent para la ubicación
+            set_fulfillment_text(response_json, "Glamping Brillo de Luna se encuentra en un hermoso paraje natural cerca de [Nombre Ciudad Cercana]. Te enviaremos la ubicación exacta y cómo llegar con tu confirmación de reserva.")
+        
         else:
-            # Aquí la memoria se reiniciará con cada solicitud del webhook a menos que
-            # la persistas externamente usando el session_id.
-            # Para una demostración local, funciona para mantener el contexto *dentro* de la única invocación del agente.
-            response_agent = agent_executor.invoke({"input": query_text})
-            agent_output = response_agent.get("output", "No pude generar una respuesta con el agente.")
+            # Si ningún intent específico coincide, el Agente IA podría intentar responder
+            print(f"DEBUG: Intent '{intent_display_name}' no manejado directamente. Intentando con Agente IA...")
+            agent_output = ""
+            try:
+                response_agent = agent_executor.invoke({"input": user_query})
+                agent_output = response_agent.get("output", "Lo siento, no pude generar una respuesta con el agente.")
+            except Exception as e:
+                print(f"Error al invocar al agente LangChain para intent no manejado: {e}")
+                agent_output = "Lo siento, hubo un problema con el asistente. ¿Podrías intentar de otra forma o seleccionar una opción del menú?"
+            
+            set_fulfillment_text(response_json, agent_output)
 
-            if "NO_INFO_ENCONTRADA_RAG" in agent_output:
-                fulfillment_text = f"Lo siento, no tengo información específica sobre '{query_text}' en mi base de conocimientos. ¿Hay algo más en lo que pueda ayudarte o te gustaría hablar con un asesor?"
-            else:
-                fulfillment_text = agent_output
 
     except openai.APIError as e:
         print(f"Error de API de OpenAI: {e}")
-        fulfillment_text = "Lo siento, hubo un problema con el servicio de IA. Por favor, inténtalo más tarde."
+        set_fulfillment_text(response_json, "Lo siento, hubo un problema con el servicio de IA. Por favor, inténtalo más tarde.")
     except Exception as e:
         print(f"Error general en el procesamiento del webhook: {e}")
-        fulfillment_text = f"Lo siento, algo salió mal con el asistente. Error: {e}. Por favor, inténtalo de nuevo."
+        set_fulfillment_text(response_json, f"Lo siento, algo salió mal con el asistente. Error: {e}. Por favor, inténtalo de nuevo.")
 
-    return jsonify({
-        'fulfillmentText': fulfillment_text
-    })
+    return jsonify(response_json)
 
-# --- WebSocket Event Handlers ---
+# --- WebSocket Event Handlers (mantener si se usan) ---
 @socketio.on('connect')
 def test_connect():
     print('Cliente WebSocket conectado!')
@@ -241,4 +335,6 @@ def test_disconnect():
 
 if __name__ == '__main__':
     print("Iniciando Flask con SocketIO...")
-    socketio.run(app, port=8080, debug=True, allow_unsafe_werkzeug=True)
+    # Asegúrate de que Railway usa el puerto 8080 si esa es tu configuración de servicio.
+    # En Railway, si no especificas nada, usa el puerto expuesto por defecto (a menudo 8080).
+    socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)

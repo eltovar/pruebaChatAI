@@ -17,7 +17,6 @@ venv/
 *.iml
 
 # Data y Modelos Locales
-data/
 !.gitkeep # Permite mantener la carpeta 'data' vacía si la necesitas en el repo
 !data/documentos.txt # Puedes incluir documentos.txt si es pequeño y necesario para el repo
 faiss_index_mi_conocimiento/ # Ignora la carpeta del índice FAISS generado
