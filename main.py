@@ -19,7 +19,7 @@ from langchain import hub
 from langchain.tools import tool
 from langchain.memory import ConversationBufferMemory # IMPORTANTE: Para mantener el contexto de la conversación
 from langchain.prompts import MessagesPlaceholder # Para usar en el prompt del agente con memoria
-
+  pip install langchain==0.3.26 langchain-community==0.3.27 flask-socketio==5.5.1
 # Flask-SocketIO para notificaciones en tiempo real
 from flask_socketio import SocketIO, emit
 
@@ -37,7 +37,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Configuración e inicialización del sistema RAG ---
 VECTOR_STORE_PATH = "faiss_index_mi_conocimiento"
-DOCUMENT_PATH = "data/documentos.txt"
+DOCUMENT_PATH = "data/documento.txt"
 
 embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
@@ -242,4 +242,4 @@ def test_disconnect():
 
 if __name__ == '__main__':
     print("Iniciando Flask con SocketIO...")
-    socketio.run(app, port=5000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, port=8080, debug=True, allow_unsafe_werkzeug=True)
