@@ -19,7 +19,6 @@ from langchain import hub
 from langchain.tools import tool
 from langchain.memory import ConversationBufferMemory # IMPORTANTE: Para mantener el contexto de la conversación
 from langchain.prompts import MessagesPlaceholder # Para usar en el prompt del agente con memoria
-  pip install langchain==0.3.26 langchain-community==0.3.27 flask-socketio==5.5.1
 # Flask-SocketIO para notificaciones en tiempo real
 from flask_socketio import SocketIO, emit
 
