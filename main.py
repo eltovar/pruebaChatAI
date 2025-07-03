@@ -33,23 +33,9 @@ port = int(os.getenv('PORT', 8080)) # Por defecto 8080 si PORT no está en env
 socketio = SocketIO(app, cors_allowed_origins="*") # Mantener si usas las notificaciones de venta
 
 # --- Configuración del Agente de LangChain (SIN RAG por ahora) ---
-agent_llm = ChatOpenAI(model="gpt-0mini", temperature=0.7, openai_api_key=openai_api_key)
+agent_llm = ChatOpenAI(model="GPT-4o-Mini", temperature=0.7, openai_api_key=openai_api_key)
 
 # --- Definición de Herramientas (Tools) para el Agente ---
-@tool
-def get_current_weather(location: str) -> str:
-    """Obtiene el clima actual para una ubicación dada."""
-    # NOTA: Esta tool aún existe, pero si el proyecto es de "Glamping Brillo de Luna"
-    # y no hay necesidad de clima, deberías quitarla o modificarla para que sea relevante.
-    if "Medellín" in location or "Itagüí" in location or "Envigado" in location:
-        return "El clima actual en el Valle de Aburrá (Medellín/Itagüí) es soleado con una temperatura de 30°C. Ideal para actividades al aire libre."
-    elif "Bogotá" in location:
-        return "El clima en Bogotá es nublado con 18°C. Hay una probabilidad de lluvias ligeras en la tarde."
-    elif "Cali" in location:
-        return "El clima en Cali es parcialmente nublado con 27°C. Se siente cálido y húmedo."
-    else:
-        # Aquí puedes personalizar para Glamping Brillo de Luna si es necesario.
-        return f"No tengo información del clima para {location} en este momento. Por favor, especifica una ciudad principal de Colombia."
 
 @tool
 def provide_glamping_info(query: str) -> str:
