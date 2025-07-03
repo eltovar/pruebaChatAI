@@ -65,28 +65,28 @@ def AskAgent(query: str) -> str:
     else:
         return "Soy el agente de IA de Glamping Brillo de Luna. ¿Tienes alguna pregunta específica sobre nuestros glampings o servicios?"
 
-@tool
-def finalize_sale_process(product_info: str, client_info: str) -> str:
-    """Simula la finalización de un proceso de venta y emite una notificación.
-    Útil cuando el agente ha confirmado todos los detalles necesarios para registrar una venta."""
-    print(f"DEBUG: Venta finalizada para {client_info} de {product_info}. Enviando notificación...")
+# @tool
+# def finalize_sale_process(product_info: str, client_info: str) -> str:
+#     """Simula la finalización de un proceso de venta y emite una notificación.
+#     Útil cuando el agente ha confirmado todos los detalles necesarios para registrar una venta."""
+#     print(f"DEBUG: Venta finalizada para {client_info} de {product_info}. Enviando notificación...")
 
-    sale_data = {
-        "status": "OK",
-        "message": f"¡Nueva venta generada: {product_info} para {client_info}!",
-        "product": product_info,
-        "client": client_info,
-        "timestamp": datetime.now().isoformat()
-    }
-    socketio.emit('new_sale_notification', sale_data)
-    print("DEBUG: Notificación de venta emitida vía WebSocket.")
+#     sale_data = {
+#         "status": "OK",
+#         "message": f"¡Nueva venta generada: {product_info} para {client_info}!",
+#         "product": product_info,
+#         "client": client_info,
+#         "timestamp": datetime.now().isoformat()
+#     }
+#     socketio.emit('new_sale_notification', sale_data)
+#     print("DEBUG: Notificación de venta emitida vía WebSocket.")
 
-    return f"¡Excelente! El proceso de venta de {product_info} para {client_info} ha sido exitoso y se ha generado la notificación."
+#     return f"¡Excelente! El proceso de venta de {product_info} para {client_info} ha sido exitoso y se ha generado la notificación."
 
 tools = [
     # get_current_weather, # Considera si esta tool es relevante para Glamping Brillo de Luna
     AskAgent, # Nueva tool para info del glamping
-    finalize_sale_process
+    #finalize_sale_process
 ]
 
 # --- Inicializar la memoria de conversación para el Agente LangChain ---
@@ -202,7 +202,7 @@ def webhook():
             set_output_context(response_json, session_id, "main_menu_active")
 
         elif intent_display_name == 'Default Fallback Intent':
-            # Si el intent de Fallback se activa, primero intenta con el agente
+            # Si el intent de Fallback se activa. primero intenta con el agente
             print("Intent 'Default Fallback Intent' activado, intentando con Agente IA.")
             agent_output = ""
             try:
@@ -266,15 +266,15 @@ def webhook():
             
             clear_output_context(response_json, session_id, "awaiting_ai_query") # Limpia el contexto si existe
 
-        elif intent_display_name == 'Confirmar_Venta_Intent':
-            # Asumiendo que Dialogflow ya capturó los parámetros 'producto' y 'cliente'
-            product = parameters.get('producto')
-            client = parameters.get('cliente')
-            if product and client:
-                fulfillment_text_sale = finalize_sale_process(product, client)
-                set_fulfillment_text(response_json, fulfillment_text_sale)
-            else:
-                set_fulfillment_text(response_json, "Necesito más información (producto y cliente) para finalizar la venta.")
+        # elif intent_display_name == 'Confirmar_Venta_Intent':
+        #     # Asumiendo que Dialogflow ya capturó los parámetros 'producto' y 'cliente'
+        #     product = parameters.get('producto')
+        #     client = parameters.get('cliente')
+        #     if product and client:
+        #         fulfillment_text_sale = finalize_sale_process(product, client)
+        #         set_fulfillment_text(response_json, fulfillment_text_sale)
+        #     else:
+        #         set_fulfillment_text(response_json, "Necesito más información (producto y cliente) para finalizar la venta.")
         
         # --- Intents estáticos de ejemplo de Glamping Brillo de Luna ---
         elif intent_display_name == 'MenuOpcion_Horarios': # Renombrado de tu PruebaChatAI para consistencia
