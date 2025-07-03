@@ -23,6 +23,8 @@ from langchain.prompts import MessagesPlaceholder # Para usar en el prompt del a
 # Flask-SocketIO para notificaciones en tiempo real
 from flask_socketio import SocketIO, emit
 
+from langchain.prompts import PromptTemplate
+
 # --- Cargar variables de entorno al iniciar la aplicación ---
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
